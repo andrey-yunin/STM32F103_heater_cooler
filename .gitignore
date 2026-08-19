@@ -1,0 +1,26 @@
+# STM32CubeIDE
+.metadata/
+Debug/
+Release/
+
+# Build artifacts
+*.o
+*.d
+*.elf
+*.hex
+*.bin
+*.map
+*.lst
+*.su
+*.dep
+*.crf
+
+# IDE
+.settings/
+.csettings/
+*.scvd
+JLinkLog.txt
+
+# OS
+Thumbs.db
+.DS_Store

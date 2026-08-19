@@ -1,0 +1,92 @@
+Configuration	STM32F103_heater_cooler
+STM32CubeMX 	6.15.0
+Date	06/17/2026
+MCU	STM32F103C8Tx
+
+
+
+PERIPHERALS	MODES	FUNCTIONS	PINS
+ADC1	IN0	ADC1_IN0	PA0-WKUP
+ADC1	IN1	ADC1_IN1	PA1
+CAN	Activated	CAN_RX	PA11
+CAN	Activated	CAN_TX	PA12
+SYS	Serial Wire	SYS_JTCK-SWCLK	PA14
+SYS	Serial Wire	SYS_JTMS-SWDIO	PA13
+SYS	TIM4	SYS_VS_tim4	VP_SYS_VS_tim4
+TIM2	Internal Clock	TIM2_VS_ClockSourceINT	VP_TIM2_VS_ClockSourceINT
+TIM2	PWM Generation CH1	TIM2_CH1	PA15
+TIM3	Internal Clock	TIM3_VS_ClockSourceINT	VP_TIM3_VS_ClockSourceINT
+TIM3	PWM Generation CH1	TIM3_CH1	PA6
+
+
+
+Pin Nb	PINs	FUNCTIONs	LABELs
+10	PA0-WKUP	ADC1_IN0	
+11	PA1	ADC1_IN1	
+12	PA2	GPIO_Input	
+13	PA3	GPIO_Input	
+14	PA4	GPIO_Output	heater_1
+15	PA5	GPIO_Output	heater_2
+16	PA6	TIM3_CH1	
+17	PA7	GPIO_Output	STB
+32	PA11	CAN_RX	
+33	PA12	CAN_TX	
+34	PA13	SYS_JTMS-SWDIO	
+37	PA14	SYS_JTCK-SWCLK	
+38	PA15	TIM2_CH1	
+PERIPHERALS	MODES	FUNCTIONS	PINS
+ADC1	IN0	ADC1_IN0	PA0-WKUP
+ADC1	IN1	ADC1_IN1	PA1
+CAN	Activated	CAN_RX	PA11
+CAN	Activated	CAN_TX	PA12
+SYS	Serial Wire	SYS_JTCK-SWCLK	PA14
+SYS	Serial Wire	SYS_JTMS-SWDIO	PA13
+SYS	TIM4	SYS_VS_tim4	VP_SYS_VS_tim4
+TIM2	Internal Clock	TIM2_VS_ClockSourceINT	VP_TIM2_VS_ClockSourceINT
+TIM2	PWM Generation CH1	TIM2_CH1	PA15
+TIM3	Internal Clock	TIM3_VS_ClockSourceINT	VP_TIM3_VS_ClockSourceINT
+TIM3	PWM Generation CH1	TIM3_CH1	PA6
+
+
+
+Pin Nb	PINs	FUNCTIONs	LABELs
+10	PA0-WKUP	ADC1_IN0	
+11	PA1	ADC1_IN1	
+12	PA2	GPIO_Input	
+13	PA3	GPIO_Input	
+14	PA4	GPIO_Output	heater_1
+15	PA5	GPIO_Output	heater_2
+16	PA6	TIM3_CH1	
+17	PA7	GPIO_Output	STB
+32	PA11	CAN_RX	
+33	PA12	CAN_TX	
+34	PA13	SYS_JTMS-SWDIO	
+37	PA14	SYS_JTCK-SWCLK	
+38	PA15	TIM2_CH1	
+
+
+
+SOFTWARE PROJECT
+
+Project Settings : 
+Project Name : STM32F103_heater_cooler
+Project Folder : /home/andrey/STM32CubeIDE/workspace_1.19.0/STM32F103_heater_cooler
+Toolchain / IDE : STM32CubeIDE
+Firmware Package Name and Version : STM32Cube FW_F1 V1.8.7
+
+
+Code Generation Settings : 
+STM32Cube MCU packages and embedded software packs : Copy only the necessary library files
+Generate peripheral initialization as a pair of '.c/.h' files per peripheral : No
+Backup previously generated files when re-generating : No
+Delete previously generated files when not re-generated : Yes
+Set all free pins as analog (to optimize the power consumption) : No
+
+
+Toolchains Settings : 
+Compiler Optimizations : 
+
+
+
+
+
