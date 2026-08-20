@@ -134,4 +134,35 @@
 #define CAN_GET_SRC_ADDR(id) \
 			((uint8_t)(((id) >> 8) & 0xFFU))
 
+
+// --- CAN response API ---
+
+/*
+ * ACK confirms that Dispatcher accepted the command for processing.
+ */
+void CAN_SendAck(uint16_t cmd_code);
+
+
+/*
+ * NACK reports a command or execution error.
+ */
+void CAN_SendNack(uint16_t cmd_code, uint16_t error_code);
+
+
+/*
+ * DATA sends one six-byte application payload fragment.
+ * sequence_info contains sequence index and EOT flag.
+ */
+void CAN_SendData(uint16_t cmd_code,
+				uint8_t sequence_info,
+                const uint8_t *data,
+                uint8_t len);
+
+/*
+ * DONE confirms successful completion of the command.
+ * target_id is zero for F001 service response.
+ */
+void CAN_SendDone(uint16_t cmd_code, uint8_t target_id);
+
+
 #endif /* INC_CAN_PROTOCOL_H_ */

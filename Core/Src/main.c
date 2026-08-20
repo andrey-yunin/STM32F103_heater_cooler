@@ -23,6 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "app_queues.h"
+#include "tasks/task_can_handler.h"
 #include "app_config.h"
 
 /* USER CODE END Includes */
@@ -542,6 +543,8 @@ void start_task_watchdog(void *argument)
 void start_task_can_handler(void *argument)
 {
   /* USER CODE BEGIN start_task_can_handler */
+	app_start_task_can_handler(argument);
+
   /* Infinite loop */
   for(;;)
   {

@@ -22,6 +22,9 @@
 #include "stm32f1xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "app_config.h"
+#include "app_queues.h"
+#include "tasks/task_can_handler.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -232,5 +235,32 @@ void TIM4_IRQHandler(void)
 }
 
 /* USER CODE BEGIN 1 */
+
+void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *can_handle)
+  {
+    CanRxFrame_t rx_frame;
+
+    if (HAL_CAN_GetRxMessage(can_handle,
+                             CAN_RX_FIFO0,
+                             &rx_frame.header,
+                             rx_frame.data) != HAL_OK)
+    {
+      return;
+    }
+
+    if (osMessageQueuePut(can_rx_queueHandle,
+                          &rx_frame,
+                          0U,
+                          0U) == osOK)
+    {
+      (void)osThreadFlagsSet(task_can_handleHandle, FLAG_CAN_RX);
+    }
+    else
+    {
+      CAN_Diagnostics_RecordRxQueueOverflow();
+    }
+}
+
+
 
 /* USER CODE END 1 */
