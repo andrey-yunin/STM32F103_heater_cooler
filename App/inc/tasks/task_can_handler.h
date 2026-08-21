@@ -10,10 +10,8 @@
 
 #include <stdint.h>
 
-
-typedef struct
-{
-	uint32_t rx_total;
+typedef struct {
+    uint32_t rx_total;
     uint32_t tx_total;
 
     uint32_t rx_queue_overflow;
@@ -38,7 +36,6 @@ typedef struct
     uint32_t last_esr;
 } CanDiagnostics_t;
 
-
 // --- Task entry point ---
 
 /*
@@ -49,7 +46,8 @@ void app_start_task_can_handler(void *argument);
 void CAN_Diagnostics_GetSnapshot(CanDiagnostics_t *out);
 void CAN_Diagnostics_RecordRxQueueOverflow(void);
 void CAN_Diagnostics_RecordAppQueueOverflow(void);
-void CAN_Diagnostics_RecordCanError(uint32_t hal_error,
-									uint32_t esr);
+void CAN_Diagnostics_RecordCanError(uint32_t hal_error, uint32_t esr);
+/* --- Обновление direct-фильтра после смены runtime NodeID --- */
+void CAN_UpdateDirectFilter(uint8_t destination);
 
 #endif /* INC_TASKS_TASK_CAN_HANDLER_H_ */

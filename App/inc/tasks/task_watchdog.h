@@ -8,6 +8,4 @@
 #ifndef INC_TASKS_TASK_WATCHDOG_H_
 #define INC_TASKS_TASK_WATCHDOG_H_
 
-
-
 #endif /* INC_TASKS_TASK_WATCHDOG_H_ */

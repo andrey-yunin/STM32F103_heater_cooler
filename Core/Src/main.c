@@ -25,6 +25,8 @@
 #include "app_queues.h"
 #include "tasks/task_can_handler.h"
 #include "app_config.h"
+#include "app_flash.h"
+
 
 /* USER CODE END Includes */
 
@@ -152,6 +154,8 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_MUTEX */
   /* add mutexes, ... */
+  AppConfig_Init();
+
   /* USER CODE END RTOS_MUTEX */
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
