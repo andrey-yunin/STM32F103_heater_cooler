@@ -22,11 +22,12 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "app_queues.h"
+
 #include "tasks/task_can_handler.h"
+#include "tasks/task_dispatcher.h"
 #include "app_config.h"
 #include "app_flash.h"
-
+#include "app_queues.h"
 
 /* USER CODE END Includes */
 
@@ -567,6 +568,8 @@ void start_task_can_handler(void *argument)
 void start_task_dispatcher(void *argument)
 {
   /* USER CODE BEGIN start_task_dispatcher */
+	app_start_task_dispatcher(argument);
+
   /* Infinite loop */
   for(;;)
   {

@@ -216,7 +216,6 @@ void CAN1_SCE_IRQHandler(void)
   /* USER CODE END CAN1_SCE_IRQn 0 */
   HAL_CAN_IRQHandler(&hcan);
   /* USER CODE BEGIN CAN1_SCE_IRQn 1 */
-
   /* USER CODE END CAN1_SCE_IRQn 1 */
 }
 
@@ -261,6 +260,10 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *can_handle)
     }
 }
 
-
+void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *can_handle)
+{
+	CAN_Diagnostics_RecordCanError(HAL_CAN_GetError(can_handle),
+									can_handle->Instance->ESR);
+}
 
 /* USER CODE END 1 */
