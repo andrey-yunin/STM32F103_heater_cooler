@@ -59,6 +59,10 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define puls_res_1_Pin GPIO_PIN_2
+#define puls_res_1_GPIO_Port GPIOA
+#define puls_res_2_Pin GPIO_PIN_3
+#define puls_res_2_GPIO_Port GPIOA
 #define heater_1_Pin GPIO_PIN_4
 #define heater_1_GPIO_Port GPIOA
 #define heater_2_Pin GPIO_PIN_5

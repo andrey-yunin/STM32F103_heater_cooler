@@ -23,7 +23,7 @@
 
 /* RTOS queue lengths used by the executor tasks. */
 #define CAN_RX_QUEUE_LEN 16U
-#define CAN_TX_QUEUE_LEN 16U
+#define CAN_TX_QUEUE_LEN 32U
 #define DISPATCHER_QUEUE_LEN 8U
 #define HEATER_COOLER_QUEUE_LEN 8U
 
