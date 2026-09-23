@@ -5,164 +5,79 @@
  *      Author: andrey
  */
 
-
 #include "drivers/heater_outputs.h"
 
 #include "main.h"
 
+// --- Аппаратная карта выходов ---
+
+/* Порт и пин составляют единое описание GPIO одного выхода. */
+typedef struct {
+	GPIO_TypeDef *port;
+	uint16_t pin;
+} HeaterOutputGpio_t;
+
+/* Именованные индексы явно связывают назначение с подключением. */
+static const HeaterOutputGpio_t heater_outputs[HEATER_OUTPUT_COUNT] = {
+		[HEATER_OUTPUT_SAMPLE_DISK] = { .port = heater_1_GPIO_Port, .pin =
+				heater_1_Pin }, [HEATER_OUTPUT_SCANNER_GLASS] = { .port =
+				heater_2_GPIO_Port, .pin = heater_2_Pin } };
+
+// --- Проверка идентификатора ---
 /*
- * Период time-proportional PWM для GPIO-нагревателей.
- * Внутри этого окна duty задаёт долю времени активного GPIO-уровня.
+ * Enum в C не исключает передачи постороннего значения.
+ * Проверка выполняется до обращения к аппаратной таблице.
+ * Приведение к unsigned также исключает отрицательные значения.
  */
-#define HEATER_OUTPUT_WINDOW_MS 100U
-
-/* Таблица GPIO-портов в соответствии с логическими индексами выходов. */
-static GPIO_TypeDef *const heater_ports[HEATER_OUTPUT_COUNT] = {
-		heater_1_GPIO_Port,
-		heater_2_GPIO_Port
-};
-
-/* Таблица GPIO-пинов в соответствии с логическими индексами выходов. */
-static const uint16_t heater_pins[HEATER_OUTPUT_COUNT] = {
-		heater_1_Pin,
-		heater_2_Pin
-};
-
-/*
- * Текущий duty каждого выхода и его разрешённое состояние.
- * Duty хранится в процентах от 0 до 100, а не как значение таймера.
- */
-static uint8_t heater_duty[HEATER_OUTPUT_COUNT];
-static bool heater_enabled[HEATER_OUTPUT_COUNT];
-
-/* Проверяет индекс до обращения к таблицам портов и пинов. */
-static bool HeaterOutputs_IsValid(uint8_t output)
-{
-	return output < HEATER_OUTPUT_COUNT;
+static bool HeaterOutputs_IsValid(HeaterOutput_t output) {
+	return (unsigned int) output < (unsigned int) HEATER_OUTPUT_COUNT;
 }
 
-/* Устанавливает физический уровень GPIO выбранного нагревателя. */
-static void HeaterOutputs_Write(uint8_t output,
-								GPIO_PinState state)
-{
-	HAL_GPIO_WritePin(heater_ports[output],
-					heater_pins[output],
-					state);
-}
+// --- Включение выхода ---
 
 /*
- * Преобразует duty и текущую фазу окна в физический уровень GPIO.
- * Например, при duty=30 GPIO активен первые 30 мс каждого 100-мс окна.
+ * Доменная задача вызывает функцию после проверки команды.
+ * GPIO остаётся в HIGH до DISABLE или общего safe-off.
+ * HAL-вызов задаёт уровень, но не проверяет состояние нагрузки.
  */
-static void HeaterOutputs_Apply(uint8_t output,
-								uint32_t phase_ms)
-{
-	uint32_t on_time_ms;
-
-	if (!heater_enabled[output] ||
-			(heater_duty[output] == HEATER_OUTPUT_DUTY_MIN_PERCENT))
-		{
-		HeaterOutputs_Write(output, GPIO_PIN_RESET);
-		return;
-		}
-
-	if (heater_duty[output] >= HEATER_OUTPUT_DUTY_MAX_PERCENT)
-	{
-		HeaterOutputs_Write(output, GPIO_PIN_SET);
-        return;
-	}
-
-	on_time_ms =
-			((uint32_t)heater_duty[output] * HEATER_OUTPUT_WINDOW_MS) / 100U;
-
-	HeaterOutputs_Write(output,
-			(phase_ms < on_time_ms)
-			? GPIO_PIN_SET
-			: GPIO_PIN_RESET);
-}
-
-bool HeaterOutputs_Enable(uint8_t output)
-{
-	/* Разрешаем выход и сразу применяем его сохранённый duty. */
-	if (!HeaterOutputs_IsValid(output))
-	{
+bool HeaterOutputs_Enable(HeaterOutput_t output) {
+	if (!HeaterOutputs_IsValid(output)) {
 		return false;
 	}
 
-	heater_enabled[output] = true;
-    HeaterOutputs_Apply(output, 0U);
-
-    return true;
-}
-
-bool HeaterOutputs_Disable(uint8_t output)
-{
-	/* Сначала запрещаем программную генерацию, затем физически сбрасываем GPIO. */
-	if (!HeaterOutputs_IsValid(output))
-	{
-		return false;
-	}
-
-    heater_enabled[output] = false;
-    HeaterOutputs_Write(output, GPIO_PIN_RESET);
-    return true;
-}
-
-bool HeaterOutputs_SetDuty(uint8_t output,
-						uint8_t duty_percent)
-{
-	/* Некорректный индекс или duty не должен попасть в аппаратный слой. */
-	if (!HeaterOutputs_IsValid(output) ||
-			(duty_percent > HEATER_OUTPUT_DUTY_MAX_PERCENT))
-		{
-		return false;
-		}
-
-	heater_duty[output] = duty_percent;
-
-/* Нулевой duty является безусловной командой выключения выхода. */
-	if (duty_percent == HEATER_OUTPUT_DUTY_MIN_PERCENT)
-		{
-		HeaterOutputs_Write(output, GPIO_PIN_RESET);
-		}
+	HAL_GPIO_WritePin(heater_outputs[output].port, heater_outputs[output].pin,
+			GPIO_PIN_SET);
 	return true;
 }
 
-void HeaterOutputs_Tick(uint32_t now_ms)
-{
-	uint32_t phase_ms;
+// --- Отключение выхода ---
 
-	/* Все выходы используют одну общую временную фазу окна. */
-    phase_ms = now_ms % HEATER_OUTPUT_WINDOW_MS;
+/*
+ * Немедленно снимает управляющий уровень выбранного SSR.
+ * Повторное отключение безопасно и не требует знания
+ * предыдущего состояния канала.
+ */
+bool HeaterOutputs_Disable(HeaterOutput_t output) {
+	if (!HeaterOutputs_IsValid(output)) {
+		return false;
+	}
 
-    for (uint8_t output = 0U;
-    		output < HEATER_OUTPUT_COUNT;
-    		output++)
-    {
-    	HeaterOutputs_Apply(output, phase_ms);
-    }
+	HAL_GPIO_WritePin(heater_outputs[output].port, heater_outputs[output].pin,
+			GPIO_PIN_RESET);
+	return true;
 }
 
-void HeaterOutputs_AllOff(void)
-{
-	/* Safe-state: сбрасываем состояние и физический уровень каждого выхода. */
-	for (uint8_t output = 0U;
-			output < HEATER_OUTPUT_COUNT;
-			output++)
-	{
-		heater_enabled[output] = false;
-        heater_duty[output] = HEATER_OUTPUT_DUTY_MIN_PERCENT;
+// --- Общее безопасное отключение ---
 
-        HeaterOutputs_Write(output, GPIO_PIN_RESET);
+/*
+ * Принудительно сбрасывает оба выхода независимо
+ * от состояния доменной задачи.
+ * GPIO должны быть инициализированы; RTOS не требуется.
+ */
+void HeaterOutputs_AllOff(void) {
+	for (unsigned int output = 0U; output < (unsigned int) HEATER_OUTPUT_COUNT;
+			output++) {
+		HAL_GPIO_WritePin(heater_outputs[output].port,
+				heater_outputs[output].pin, GPIO_PIN_RESET);
 	}
-}
-
-uint8_t HeaterOutputs_GetDuty(uint8_t output)
-{
-	/* Для ошибочного индекса возвращаем безопасное значение duty=0. */
-	if (!HeaterOutputs_IsValid(output))
-	{
-		return HEATER_OUTPUT_DUTY_MIN_PERCENT;
-	}
-	return heater_duty[output];
 }

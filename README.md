@@ -13,7 +13,26 @@ The Conductor owns temperature policy, zone mapping and the regulation loop.
 This board executes low-level power commands and reports channel state,
 feedback and faults.
 
-## Current Status
+## Current Status — 2026-09-23
+
+Heater channels 0 and 3 now use GPIO on/off for external SSR-25DD relays.
+ENABLE sets the output HIGH; DISABLE sets it LOW. Heater duty and the 100 ms
+software PWM window are removed. SET_POWER applies only to Peltier channels
+1 and 2; heater channels reject it with INVALID_PARAM. SAFE_OFF disables all.
+
+The driver uses a local enum and one const `{port, pin}` table. Domain code
+has been updated, and queue/task allocation failures enter safe-off before
+Error_Handler. Static review is complete; the user confirmed a clean build.
+
+The domain task wrapper in main.c still only delays and must be connected
+before runtime testing. GET_STATUS and watchdog are unfinished. No bench
+acceptance is implied by the successful build.
+
+The old status table and channel/PWM descriptions below are retained as
+historical context and are superseded by this checkpoint. Full handoff:
+`../DDS-240_readme/DDS-240_eko_system/Heater_Cooler/NEXT_SESSION_PROMPT.md`.
+
+## Historical Initial Status
 
 | Area | Status |
 | --- | --- |

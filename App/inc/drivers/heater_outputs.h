@@ -4,10 +4,11 @@
  *  Created on: Aug 19, 2026
  *      Author: andrey
  *
- * Контракт управления двумя GPIO-нагревателями:
- * PA4 — sample disk;
- * PA5 — scanner glass.
+ * heater_outputs.h
  *
+ * Управление двумя внешними SSR-25DD через GPIO.
+ * Драйвер выполняет только включение/выключение.
+ * Температурное регулирование находится у Дирижёра.
  */
 
 #ifndef INC_DRIVERS_HEATER_OUTPUTS_H_
@@ -16,51 +17,32 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-
-/* Логическая карта двух GPIO-нагревателей платы. */
-
-#define HEATER_OUTPUT_COUNT 2U
-#define HEATER_OUTPUT_SAMPLE_DISK 0U
-#define HEATER_OUTPUT_SCANNER_GLASS 1U
-
-#define HEATER_OUTPUT_DUTY_MIN_PERCENT 0U
-#define HEATER_OUTPUT_DUTY_MAX_PERCENT 100U
-
+// --- Локальные идентификаторы выходов ---
 /*
- * Управление GPIO и программным time-proportional PWM.
- *
- * Duty — процент времени, в течение которого выход включён
- * внутри одного 100-мс окна:
- *   0%   — выход постоянно выключен;
- *   50%  — выход включён половину окна;
- *   100% — выход постоянно включён.
- *
- * Duty не является температурой, напряжением или током.
+ * Индексы GPIO-драйвера, не номера каналов CAN.
+ * COUNT задаёт размер таблицы и не является выходом.
  */
+typedef enum {
+	HEATER_OUTPUT_SAMPLE_DISK = 0,
+	HEATER_OUTPUT_SCANNER_GLASS,
+	HEATER_OUTPUT_COUNT
+} HeaterOutput_t;
 
-/* Разрешает работу выбранного логического выхода. */
-bool HeaterOutputs_Enable(uint8_t output);
 
-/* Немедленно отключает выбранный логический выход. */
-bool HeaterOutputs_Disable(uint8_t output);
+// --- Управление отдельным выходом ---
 
-/* Сохраняет требуемый duty в диапазоне 0..100 процентов. */
-bool HeaterOutputs_SetDuty(uint8_t output,
-							uint8_t duty_percent);
+/* Включает GPIO; false при недопустимом идентификаторе. */
+bool HeaterOutputs_Enable(HeaterOutput_t output);
+
+/* Выключает GPIO; false при недопустимом идентификаторе. */
+bool HeaterOutputs_Disable(HeaterOutput_t output);
+
 
 /*
- * Вызывается периодически из доменной задачи.
- * Реализует time-proportional PWM для GPIO-выходов.
- */
-void HeaterOutputs_Tick(uint32_t now_ms);
-
-/*
- * Немедленно выключает оба GPIO-выхода и сбрасывает duty.
+ * Принудительно выключает оба выхода.
+ * Не использует RTOS, очереди и CAN.
+ * Вызывается после инициализации GPIO.
  */
 void HeaterOutputs_AllOff(void);
-
-/* Возвращает последнее принятое значение duty выбранного выхода. */
-uint8_t HeaterOutputs_GetDuty(uint8_t output);
-
 
 #endif /* INC_DRIVERS_HEATER_OUTPUTS_H_ */
