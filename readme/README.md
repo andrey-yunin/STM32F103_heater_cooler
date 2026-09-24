@@ -75,6 +75,12 @@ Project report:
 /home/andrey/STM32CubeIDE/workspace_1.19.0/DDS-240_readme/DDS-240_eko_system/Heater_Cooler/HEATER_COOLER_EXECUTOR_REPORT.md
 ```
 
+Test plan (prototype scope, watchdog profiles and ADC input setup):
+
+```text
+/home/andrey/STM32CubeIDE/workspace_1.19.0/DDS-240_readme/DDS-240_eko_system/Heater_Cooler/HEATER_COOLER_EXECUTOR_TEST_PLAN.md
+```
+
 Next session prompt:
 
 ```text
