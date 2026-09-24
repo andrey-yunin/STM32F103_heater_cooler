@@ -25,6 +25,8 @@
 
 #include "tasks/task_can_handler.h"
 #include "tasks/task_dispatcher.h"
+#include "tasks/task_heater_cooler_ctrl.h"
+#include "tasks/task_watchdog.h"
 #include "app_config.h"
 #include "app_flash.h"
 #include "app_queues.h"
@@ -54,6 +56,8 @@ ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 
 CAN_HandleTypeDef hcan;
+
+IWDG_HandleTypeDef hiwdg;
 
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
@@ -91,6 +95,7 @@ static void MX_ADC1_Init(void);
 static void MX_CAN_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_IWDG_Init(void);
 void start_task_watchdog(void *argument);
 void start_task_can_handler(void *argument);
 void start_task_dispatcher(void *argument);
@@ -138,6 +143,7 @@ int main(void) {
 	MX_CAN_Init();
 	MX_TIM2_Init();
 	MX_TIM3_Init();
+	MX_IWDG_Init();
 	/* USER CODE BEGIN 2 */
 
 	/* USER CODE END 2 */
@@ -173,7 +179,7 @@ int main(void) {
 	heater_cooler_queueHandle = osMessageQueueNew(HEATER_COOLER_QUEUE_LEN,
 			sizeof(HeaterCoolerCommand_t), NULL);
 
-	// --- Проверка создания критических очередей ---
+	// --- Проверка создания критических очередей ---Проверка счётчиков supervisor-ом добавляется следующим блоком.
 
 	/*
 	 * Все четыре очереди обязательны для передачи команд и ответов.
@@ -256,9 +262,11 @@ void SystemClock_Config(void) {
 	/** Initializes the RCC Oscillators according to the specified parameters
 	 * in the RCC_OscInitTypeDef structure.
 	 */
-	RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+	RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI
+			| RCC_OSCILLATORTYPE_LSI;
 	RCC_OscInitStruct.HSIState = RCC_HSI_ON;
 	RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+	RCC_OscInitStruct.LSIState = RCC_LSI_ON;
 	RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
 	RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI_DIV2;
 	RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL16;
@@ -369,6 +377,32 @@ static void MX_CAN_Init(void) {
 	/* USER CODE BEGIN CAN_Init 2 */
 
 	/* USER CODE END CAN_Init 2 */
+
+}
+
+/**
+ * @brief IWDG Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_IWDG_Init(void) {
+
+	/* USER CODE BEGIN IWDG_Init 0 */
+
+	/* USER CODE END IWDG_Init 0 */
+
+	/* USER CODE BEGIN IWDG_Init 1 */
+
+	/* USER CODE END IWDG_Init 1 */
+	hiwdg.Instance = IWDG;
+	hiwdg.Init.Prescaler = IWDG_PRESCALER_256;
+	hiwdg.Init.Reload = 624;
+	if (HAL_IWDG_Init(&hiwdg) != HAL_OK) {
+		Error_Handler();
+	}
+	/* USER CODE BEGIN IWDG_Init 2 */
+
+	/* USER CODE END IWDG_Init 2 */
 
 }
 
@@ -546,6 +580,7 @@ static void MX_GPIO_Init(void) {
 /* USER CODE END Header_start_task_watchdog */
 void start_task_watchdog(void *argument) {
 	/* USER CODE BEGIN 5 */
+	app_start_task_watchdog(argument);
 	/* Infinite loop */
 	for (;;) {
 		osDelay(1);
@@ -598,6 +633,8 @@ void start_task_dispatcher(void *argument) {
 /* USER CODE END Header_start_task_heater_cooler_ctrl */
 void start_task_heater_cooler_ctrl(void *argument) {
 	/* USER CODE BEGIN start_task_heater_cooler_ctrl */
+	app_start_task_heater_cooler_ctrl(argument);
+
 	/* Infinite loop */
 	for (;;) {
 		osDelay(1);
@@ -632,7 +669,24 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 void Error_Handler(void) {
 	/* USER CODE BEGIN Error_Handler_Debug */
 	/* User can add his own implementation to report the HAL error return state */
+	// --- Аварийное отключение платы ---
+	/*
+	 * Запрещаем обычные прерывания и переключение задач,
+	 * затем отключаем выходы. В приложение не возвращаемся.
+	 * RTOS и CAN в этом пути не используются.
+	 */
 	__disable_irq();
+	AppSafety_AllOff();
+	__DSB();
+	__ISB();
+
+	// --- Аварийный останов ---
+	/*
+	 * IWDG здесь не обслуживается.
+	 * Если он уже запущен, по истечении таймаута произойдёт reset.
+	 * При ошибке до запуска IWDG остаёмся до внешнего reset.
+	 */
+
 	while (1) {
 	}
 	/* USER CODE END Error_Handler_Debug */

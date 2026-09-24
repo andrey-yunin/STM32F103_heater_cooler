@@ -6,6 +6,7 @@
  */
 
 #include "drivers/heater_outputs.h"
+#include "app_safety.h"
 
 #include "main.h"
 
@@ -20,8 +21,8 @@ typedef struct {
 /* Именованные индексы явно связывают назначение с подключением. */
 static const HeaterOutputGpio_t heater_outputs[HEATER_OUTPUT_COUNT] = {
 		[HEATER_OUTPUT_SAMPLE_DISK] = { .port = heater_1_GPIO_Port, .pin =
-				heater_1_Pin }, [HEATER_OUTPUT_SCANNER_GLASS] = { .port =
-				heater_2_GPIO_Port, .pin = heater_2_Pin } };
+		heater_1_Pin }, [HEATER_OUTPUT_SCANNER_GLASS] = { .port =
+		heater_2_GPIO_Port, .pin = heater_2_Pin } };
 
 // --- Проверка идентификатора ---
 /*
@@ -45,9 +46,25 @@ bool HeaterOutputs_Enable(HeaterOutput_t output) {
 		return false;
 	}
 
+	const uint32_t saved_primask = __get_PRIMASK();
+	__disable_irq();
+
+	/*
+	 * Проверка запрета и включение неделимы для задач:
+	 * PrepareReset не сможет вклиниться между ними.
+	 */
+	if (AppSafety_IsResetPending()) {
+		__set_PRIMASK(saved_primask);
+		return false;
+	}
+
 	HAL_GPIO_WritePin(heater_outputs[output].port, heater_outputs[output].pin,
 			GPIO_PIN_SET);
+
+	__DSB();
+	__set_PRIMASK(saved_primask);
 	return true;
+
 }
 
 // --- Отключение выхода ---
@@ -67,17 +84,35 @@ bool HeaterOutputs_Disable(HeaterOutput_t output) {
 	return true;
 }
 
-// --- Общее безопасное отключение ---
+// --- Общее безопасное отключение нагревателей ---
 
 /*
- * Принудительно сбрасывает оба выхода независимо
- * от состояния доменной задачи.
- * GPIO должны быть инициализированы; RTOS не требуется.
+ * Обеспечивает LOW на обоих выходах SSR до или после MX_GPIO_Init().
+ * Оба выхода текущей платы находятся на GPIOA.
+ * Остальные пины, включая CAN STB, не изменяются.
  */
 void HeaterOutputs_AllOff(void) {
+	GPIO_InitTypeDef gpio = { 0 };
+
+	// --- Подготовка порта ---
+
+	__HAL_RCC_GPIOA_CLK_ENABLE();
+
+	gpio.Mode = GPIO_MODE_OUTPUT_PP;
+	gpio.Pull = GPIO_NOPULL;
+	gpio.Speed = GPIO_SPEED_FREQ_LOW;
+
+	// --- Отключение выходов ---
+
+	/* LOW записывается до переключения пина в выходной режим. */
 	for (unsigned int output = 0U; output < (unsigned int) HEATER_OUTPUT_COUNT;
 			output++) {
+		gpio.Pin = heater_outputs[output].pin;
+
 		HAL_GPIO_WritePin(heater_outputs[output].port,
 				heater_outputs[output].pin, GPIO_PIN_RESET);
+
+		HAL_GPIO_Init(heater_outputs[output].port, &gpio);
 	}
 }
+

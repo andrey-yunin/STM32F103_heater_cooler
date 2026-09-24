@@ -16,7 +16,8 @@
  */
 
 #include "tasks/task_dispatcher.h"
-
+// --- Публикация прогресса Dispatcher ---
+#include "tasks/task_watchdog.h"
 #include "app_config.h"
 #include "app_flash.h"
 #include "app_queues.h"
@@ -24,6 +25,7 @@
 #include "cmsis_os.h"
 #include "main.h"
 #include "tasks/task_can_handler.h"
+#include "app_safety.h"
 
 #include <string.h>
 
@@ -224,14 +226,19 @@ static void Dispatcher_HandleServiceCommand(const ParsedCanCommand_t *command) {
 			break;
 		}
 
+		/* Запрещаем активацию и отключаем выходы до ожидания ответа. */
+		AppSafety_PrepareReset();
+
 		CAN_SendDone(command->cmd_code, 0U);
 
 		/*
-		 * DONE уже поставлен в TX queue.
-		 * Небольшая задержка позволяет CAN task отправить ответ.
+		 * Сохраняем существующее окно отправки: 100 тиков.
+		 * При текущем RTOS это 100 мс, без гарантии доставки CAN.
 		 */
+		if (osDelay(100U) != osOK) {
+			Error_Handler();
+		}
 
-		osDelay(100U);
 		NVIC_SystemReset();
 		break;
 
@@ -272,17 +279,31 @@ static void Dispatcher_HandleServiceCommand(const ParsedCanCommand_t *command) {
 		break;
 
 	case CAN_CMD_SRV_FACTORY_RESET:
-		if ((command->data_len < 2U) || (Dispatcher_ReadLe16(command->data) !=
-		SRV_MAGIC_FACTORY_RESET)) {
+		if ((command->data_len < 2U)
+				|| (Dispatcher_ReadLe16(command->data)
+						!= SRV_MAGIC_FACTORY_RESET)) {
 			CAN_SendNack(command->cmd_code, CAN_ERR_INVALID_KEY);
 			break;
 		}
 
-		AppConfig_FactoryReset();
+		/* Выходы отключаются и блокируются до начала стирания Flash. */
+		AppSafety_PrepareReset();
 
-		CAN_SendDone(command->cmd_code, 0U);
+		if (AppConfig_FactoryReset()) {
+			CAN_SendDone(command->cmd_code, 0U);
+		} else {
+			/* Ошибку очистки не выдаём за успешный factory reset. */
+			CAN_SendNack(command->cmd_code, CAN_ERR_FLASH_WRITE);
+		}
 
-		osDelay(100U);
+		/*
+		 * После ошибки также не возобновляем управление нагрузками.
+		 * Даём CAN время отправить результат и выполняем reset.
+		 */
+		if (osDelay(100U) != osOK) {
+			Error_Handler();
+		}
+
 		NVIC_SystemReset();
 		break;
 
@@ -382,16 +403,53 @@ static void Dispatcher_HandleHeaterCoolerCommand(
  * DONE или NACK сообщает окончательный результат.
  */
 void app_start_task_dispatcher(void *argument) {
+
 	ParsedCanCommand_t command;
 
+	/* Аргумент RTOS для этой задачи не используется. */
 	(void) argument;
 
+	// --- Интервал ожидания в тиках RTOS ---
+
+	/*
+	 * Используем общий интервал idle-пробуждения.
+	 * При текущих 1000 Гц получаем 500 тиков.
+	 */
+	const uint32_t idle_wait_ticks = (APP_WATCHDOG_TASK_IDLE_TIMEOUT_MS
+			* osKernelGetTickFreq()) / 1000U;
+
 	for (;;) {
-		if (osMessageQueueGet(dispatcher_queueHandle, &command,
-		NULL,
-		osWaitForever) != osOK) {
+		osStatus_t queue_status;
+
+		// --- Ожидание команды ---
+		queue_status = osMessageQueueGet(dispatcher_queueHandle, &command,
+		NULL, idle_wait_ticks);
+
+		/*
+		 * Пустая очередь — штатный режим.
+		 * Dispatcher исполняется, даже если команд сейчас нет.
+		 */
+		if (queue_status == osErrorTimeout) {
+			AppWatchdog_Heartbeat(APP_WDG_CLIENT_DISPATCHER);
 			continue;
 		}
+
+		/*
+		 * Ошибка очереди не подтверждает работоспособность.
+		 * Команду не читаем и heartbeat не обновляем.
+		 */
+		if (queue_status != osOK) {
+			continue;
+		}
+
+		// --- Отметка штатного продвижения ---
+
+		/*
+		 * Команда получена и передаётся на обработку.
+		 * При зависании обработчика следующих отметок не будет.
+		 * Heartbeat не означает завершение команды и не заменяет DONE.
+		 */
+		AppWatchdog_Heartbeat(APP_WDG_CLIENT_DISPATCHER);
 
 		/*
 		 * ACK отправляется до прикладной обработки команды.

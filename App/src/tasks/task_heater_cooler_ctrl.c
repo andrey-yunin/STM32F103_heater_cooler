@@ -22,7 +22,8 @@
  */
 
 #include "tasks/task_heater_cooler_ctrl.h"
-
+// --- Публикация прогресса доменной задачи ---
+#include "tasks/task_watchdog.h"
 #include "app_config.h"
 #include "app_queues.h"
 #include "app_safety.h"
@@ -62,7 +63,8 @@ static uint8_t heater_cooler_duty[CAN_HEATER_COOLER_CHANNELS_DEFAULT];
 
 static bool heater_cooler_enabled[CAN_HEATER_COOLER_CHANNELS_DEFAULT];
 
-static bool heater_cooler_fault_latched[CAN_HEATER_COOLER_CHANNELS_DEFAULT];
+/* Защёлкнутые причины неисправностей каждого логического канала. */
+static uint8_t heater_cooler_fault_flags[CAN_HEATER_COOLER_CHANNELS_DEFAULT];
 
 /*
  * Состояние аппаратного запуска PWM.
@@ -71,6 +73,25 @@ static bool heater_cooler_fault_latched[CAN_HEATER_COOLER_CHANNELS_DEFAULT];
  * Перед последующим ENABLE они должны быть запущены снова.
  */
 static bool peltier_pwm_running;
+
+/*
+ * Согласует доменное состояние с подготовкой reset.
+ * Эти переменные изменяет только доменная задача.
+ * Fault latch сохраняется; запрет активации не снимается.
+ */
+static void HeaterCooler_SyncResetState(void) {
+	if (!AppSafety_IsResetPending()) {
+		return;
+	}
+
+	peltier_pwm_running = false;
+
+	for (uint8_t channel = 0U; channel < CAN_HEATER_COOLER_CHANNELS_DEFAULT;
+			channel++) {
+		heater_cooler_duty[channel] = 0U;
+		heater_cooler_enabled[channel] = false;
+	}
+}
 
 /* Проверяет общий логический номер канала 0..3. */
 static bool HeaterCooler_IsValidChannel(uint8_t channel) {
@@ -169,7 +190,7 @@ static bool HeaterCooler_ApplyDuty(uint8_t channel, uint8_t duty_percent) {
 /*
  * Немедленно выключает один логический канал.
  *
- * Для Пельтье duty=0 оставляет второй Peltier-канал работающим.
+ * Для Пельтье duty=0 оставляет второй канал работающим.
  * Поэтому здесь не вызывается общий AppSafety_AllOff().
  */
 static bool HeaterCooler_ApplyChannelOff(uint8_t channel) {
@@ -191,6 +212,31 @@ static bool HeaterCooler_ApplyChannelOff(uint8_t channel) {
 	}
 }
 
+/*
+ * PeltierPwm_Start запускает пару таймеров и возвращает общий результат.
+ * При отказе считаем оба канала Пельтье недоступными до recovery/reset.
+ */
+static void HeaterCooler_LatchPwmStartFault(void) {
+	/*
+	 * Отказ запуска из-за подготовки reset — штатный запрет,
+	 * а не неисправность PWM.
+	 */
+	if (AppSafety_IsResetPending()) {
+		return;
+	}
+
+	PeltierPwm_Stop();
+	peltier_pwm_running = false;
+
+	heater_cooler_enabled[HEATER_COOLER_CHANNEL_REAGENT_1] = false;
+	heater_cooler_enabled[HEATER_COOLER_CHANNEL_REAGENT_2] = false;
+
+	heater_cooler_fault_flags[HEATER_COOLER_CHANNEL_REAGENT_1] |=
+	CAN_HC_FAULT_PWM_START;
+	heater_cooler_fault_flags[HEATER_COOLER_CHANNEL_REAGENT_2] |=
+	CAN_HC_FAULT_PWM_START;
+}
+
 // --- Включение логического канала ---
 
 /*
@@ -209,6 +255,7 @@ static bool HeaterCooler_EnableChannel(uint8_t channel) {
 		 */
 		if (!peltier_pwm_running) {
 			if (!PeltierPwm_Start()) {
+				HeaterCooler_LatchPwmStartFault();
 				return false;
 			}
 
@@ -260,7 +307,9 @@ static void HeaterCooler_UpdateResFaults(void) {
 		 * Сохраняем fault до разрешённого recovery.
 		 * Автоматическое снятие защёлки не выполняется.
 		 */
-		heater_cooler_fault_latched[domain_channel] = true;
+		/* Сохраняем RES, не стирая другие причины неисправности. */
+		heater_cooler_fault_flags[domain_channel] |= CAN_HC_FAULT_RES;
+
 		heater_cooler_enabled[domain_channel] = false;
 
 		/*
@@ -310,7 +359,18 @@ static void HeaterCooler_HandleCommand(const HeaterCoolerCommand_t *command) {
 	uint8_t channel;
 	uint8_t duty_percent;
 
+	/* Сначала исключаем обращение по пустому указателю. */
 	if (command == NULL) {
+		return;
+	}
+
+	/*
+	 * Подготовка reset уже началась.
+	 * Отклоняем очередную команду без возобновления управления.
+	 */
+	if (AppSafety_IsResetPending()) {
+		HeaterCooler_SyncResetState();
+		CAN_SendNack(command->cmd_code, CAN_ERR_DEVICE_BUSY);
 		return;
 	}
 
@@ -363,8 +423,8 @@ static void HeaterCooler_HandleCommand(const HeaterCoolerCommand_t *command) {
 			return;
 		}
 
-		/* Защёлкнутый RES fault блокирует управление каналом. */
-		if (heater_cooler_fault_latched[channel]) {
+		/* Любая защёлкнутая неисправность блокирует управление каналом. */
+		if (heater_cooler_fault_flags[channel] != CAN_HC_FAULT_NONE) {
 			CAN_SendNack(command->cmd_code, CAN_ERR_DEVICE_BUSY);
 			return;
 		}
@@ -407,12 +467,12 @@ static void HeaterCooler_HandleCommand(const HeaterCoolerCommand_t *command) {
 			return;
 		}
 
-		if (heater_cooler_fault_latched[channel]) {
+		if (heater_cooler_fault_flags[channel] != CAN_HC_FAULT_NONE) {
 			/*
-			 * Отдельного RES-NACK пока нет в глобальном контракте.
-			 * Недоступный fault-канал временно возвращается
-			 * как DEVICE_BUSY, а подробный fault передаётся через status.
+			 * Команду отклоняем общим DEVICE_BUSY.
+			 * Конкретные причины доступны через fault_flags в GET_STATUS.
 			 */
+
 			CAN_SendNack(command->cmd_code,
 			CAN_ERR_DEVICE_BUSY);
 			return;
@@ -493,7 +553,7 @@ void app_start_task_heater_cooler_ctrl(void *argument) {
 			channel++) {
 		heater_cooler_duty[channel] = 0U;
 		heater_cooler_enabled[channel] = false;
-		heater_cooler_fault_latched[channel] = false;
+		heater_cooler_fault_flags[channel] = CAN_HC_FAULT_NONE;
 	}
 
 	/*
@@ -512,25 +572,59 @@ void app_start_task_heater_cooler_ctrl(void *argument) {
 
 	if (!peltier_pwm_running) {
 		AppSafety_AllOff();
+		HeaterCooler_LatchPwmStartFault();
 	}
+
+	// --- Период обслуживания в тиках RTOS ---
+	/*
+	 * Сохраняем доменный интервал ожидания 10 мс.
+	 * Это не общий idle-интервал CAN и Dispatcher.
+	 */
+	const uint32_t service_wait_ticks = (HEATER_COOLER_TASK_PERIOD_MS
+			* osKernelGetTickFreq()) / 1000U;
+
+	// --- Обслуживание защиты и команд ---
 
 	for (;;) {
+		osStatus_t queue_status;
+
 		/*
-		 * RES контролируется независимо от наличия команд
-		 * в domain queue.
+		 * Проверяем RES независимо от наличия команд.
+		 * Обнаруженный fault отключает соответствующий канал.
 		 */
+
 		HeaterCooler_UpdateResFaults();
 
+		queue_status = osMessageQueueGet(heater_cooler_queueHandle, &command,
+		NULL, service_wait_ticks);
+
+		// --- Обработка результата ожидания ---
+
 		/*
-		 * Тайм-аут ожидания очереди позволяет периодически
-		 * проверять RES даже при отсутствии команд.
+		 * Полученную команду выполняем полностью.
+		 * Timeout означает штатное отсутствие команды.
+		 * Прочие ошибки очереди не подтверждают прогресс.
 		 */
-
-		if (osMessageQueueGet(heater_cooler_queueHandle, &command,
-		NULL,
-		HEATER_COOLER_TASK_PERIOD_MS) == osOK) {
+		if (queue_status == osOK) {
 			HeaterCooler_HandleCommand(&command);
+		} else if (queue_status != osErrorTimeout) {
+			continue;
 		}
-	}
-}
 
+		/*
+		 * Reset мог быть принят во время обработки команды.
+		 * После завершения обработчика согласуем программное состояние.
+		 * Физическое повторное включение уже запрещено драйверами.
+		 */
+		HeaterCooler_SyncResetState();
+
+		// --- Подтверждение завершённой итерации ---
+		/*
+		 * RES проверен, обработчик команды завершился
+		 * либо очередь штатно осталась пустой.
+		 * Fault канала не означает зависание самой задачи.
+		 */
+		AppWatchdog_Heartbeat(APP_WDG_CLIENT_HEATER_COOLER);
+	}
+
+}

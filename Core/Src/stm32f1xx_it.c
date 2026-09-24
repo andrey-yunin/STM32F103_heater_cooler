@@ -1,20 +1,20 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file    stm32f1xx_it.c
-  * @brief   Interrupt Service Routines.
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2026 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file    stm32f1xx_it.c
+ * @brief   Interrupt Service Routines.
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2026 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
@@ -22,6 +22,8 @@
 #include "stm32f1xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+// --- Аппаратное отключение при аварии ---
+#include "app_safety.h"
 #include "app_config.h"
 #include "app_queues.h"
 #include "tasks/task_can_handler.h"
@@ -55,6 +57,20 @@
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+// --- Подготовка аварийного состояния процессора ---
+/*
+ * Отключает выходы без RTOS, CAN и ожиданий.
+ * Вызывающий fault handler после этого остаётся в своём
+ * бесконечном цикле; возврата к работе приложения нет.
+ * NMI и HardFault инструкцией __disable_irq() не маскируются.
+ */
+static void EnterSafeFaultState(void) {
+	__disable_irq();
+	AppSafety_AllOff();
+	__DSB();
+	__ISB();
+}
+
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
@@ -76,12 +92,13 @@ extern TIM_HandleTypeDef htim4;
 void NMI_Handler(void)
 {
   /* USER CODE BEGIN NonMaskableInt_IRQn 0 */
+	// --- Отключение выходов перед аварийным циклом ---
+	EnterSafeFaultState();
 
   /* USER CODE END NonMaskableInt_IRQn 0 */
   /* USER CODE BEGIN NonMaskableInt_IRQn 1 */
-   while (1)
-  {
-  }
+	while (1) {
+	}
   /* USER CODE END NonMaskableInt_IRQn 1 */
 }
 
@@ -91,6 +108,8 @@ void NMI_Handler(void)
 void HardFault_Handler(void)
 {
   /* USER CODE BEGIN HardFault_IRQn 0 */
+	// --- Отключение выходов перед аварийным циклом ---
+	EnterSafeFaultState();
 
   /* USER CODE END HardFault_IRQn 0 */
   while (1)
@@ -106,6 +125,8 @@ void HardFault_Handler(void)
 void MemManage_Handler(void)
 {
   /* USER CODE BEGIN MemoryManagement_IRQn 0 */
+	// --- Отключение выходов перед аварийным циклом ---
+	EnterSafeFaultState();
 
   /* USER CODE END MemoryManagement_IRQn 0 */
   while (1)
@@ -121,6 +142,8 @@ void MemManage_Handler(void)
 void BusFault_Handler(void)
 {
   /* USER CODE BEGIN BusFault_IRQn 0 */
+	// --- Отключение выходов перед аварийным циклом ---
+	EnterSafeFaultState();
 
   /* USER CODE END BusFault_IRQn 0 */
   while (1)
@@ -136,6 +159,8 @@ void BusFault_Handler(void)
 void UsageFault_Handler(void)
 {
   /* USER CODE BEGIN UsageFault_IRQn 0 */
+	// --- Отключение выходов перед аварийным циклом ---
+	EnterSafeFaultState();
 
   /* USER CODE END UsageFault_IRQn 0 */
   while (1)
@@ -250,35 +275,24 @@ void TIM4_IRQHandler(void)
 
 /* USER CODE BEGIN 1 */
 
-void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *can_handle)
-  {
-    CanRxFrame_t rx_frame;
+void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *can_handle) {
+	CanRxFrame_t rx_frame;
 
-    if (HAL_CAN_GetRxMessage(can_handle,
-                             CAN_RX_FIFO0,
-                             &rx_frame.header,
-                             rx_frame.data) != HAL_OK)
-    {
-      return;
-    }
+	if (HAL_CAN_GetRxMessage(can_handle,
+	CAN_RX_FIFO0, &rx_frame.header, rx_frame.data) != HAL_OK) {
+		return;
+	}
 
-    if (osMessageQueuePut(can_rx_queueHandle,
-                          &rx_frame,
-                          0U,
-                          0U) == osOK)
-    {
-      (void)osThreadFlagsSet(task_can_handleHandle, FLAG_CAN_RX);
-    }
-    else
-    {
-      CAN_Diagnostics_RecordRxQueueOverflow();
-    }
+	if (osMessageQueuePut(can_rx_queueHandle, &rx_frame, 0U, 0U) == osOK) {
+		(void) osThreadFlagsSet(task_can_handleHandle, FLAG_CAN_RX);
+	} else {
+		CAN_Diagnostics_RecordRxQueueOverflow();
+	}
 }
 
-void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *can_handle)
-{
+void HAL_CAN_ErrorCallback(CAN_HandleTypeDef *can_handle) {
 	CAN_Diagnostics_RecordCanError(HAL_CAN_GetError(can_handle),
-									can_handle->Instance->ESR);
+			can_handle->Instance->ESR);
 }
 
 /* USER CODE END 1 */

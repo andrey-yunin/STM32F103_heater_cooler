@@ -70,6 +70,24 @@
 #define CAN_CMD_HEATCTRL_GET_STATUS 0x0810U
 #define CAN_CMD_HEATCTRL_SAFE_OFF 0x08FFU
 
+/* --- Heater/Cooler GET_STATUS: состояние канала --- */
+#define CAN_HC_STATE_OFF                  0U
+#define CAN_HC_STATE_ENABLED              1U
+#define CAN_HC_STATE_FAULT                2U
+
+/* --- Биты fault_flags; остальные биты зарезервированы --- */
+
+#define CAN_HC_FAULT_NONE                 0x00U
+#define CAN_HC_FAULT_RES                  0x01U
+#define CAN_HC_FAULT_ADC                  0x02U
+#define CAN_HC_FAULT_PWM_START            0x04U
+
+/*
+ * Измерение отсутствует или недоступно.
+ * Для SSR отсутствие ADC само по себе не является неисправностью.
+ */
+#define CAN_HC_FEEDBACK_UNAVAILABLE_MV    0xFFFFU
+
 /*
  * The active Conductor implementation sends zero-based channel ids
  * in payload byte 2: 0..3.
